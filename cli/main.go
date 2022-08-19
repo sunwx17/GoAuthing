@@ -218,9 +218,9 @@ func keepAliveLoop(c *cli.Context, campusOnly bool) (ret error) {
 				DialContext: func(ctx context.Context, _network, addr string) (net.Conn, error) {
 					logger.Debugf("DialContext %s (%s)\n", addr, network)
 					myDial := &net.Dialer{
-						Timeout:   6 * time.Second,
-						KeepAlive: 0,
-						FallbackDelay: -1,  // disable RFC 6555 Fast Fallback
+						Timeout:       6 * time.Second,
+						KeepAlive:     0,
+						FallbackDelay: -1, // disable RFC 6555 Fast Fallback
 					}
 					return myDial.DialContext(ctx, network, addr)
 				},
@@ -239,29 +239,46 @@ func keepAliveLoop(c *cli.Context, campusOnly bool) (ret error) {
 
 	stop := make(chan int, 1)
 	defer func() { stop <- 1 }()
-	go func() {
-		// Keep IPv6 online, ignore any errors
-		for {
-			select {
-			case <-stop:
-				break
-			case <-time.After(13 * time.Minute):
-				_ = accessTarget(targetInside, true)
-			}
-		}
-	}()
+	//go func() {
+	//	// Keep IPv6 online, ignore any errors
+	//	for {
+	//		select {
+	//		case <-stop:
+	//			break
+	//		case <-time.After(5 * time.Second):
+	//			_ = accessTarget(targetInside, true)
+	//			_ = authUtil(c, false)
+	//		}
+	//	}
+	//}()
 
 	for {
-		target := targetOutside
-		if campusOnly || settings.V6 {
-			target = targetInside
+		if ret = accessTarget(targetOutside, false); ret != nil {
+			logger.Infof("accessing %s failed (re-login might be required): %w", targetOutside, ret)
+			settings.V6 = false
+			_ = authUtil(c, false)
+			//break
 		}
-		if ret = accessTarget(target, settings.V6); ret != nil {
-			ret = fmt.Errorf("accessing %s failed (re-login might be required): %w", target, ret)
-			break
+		time.Sleep(1 * time.Second)
+		if ret = accessTarget(targetInside, true); ret != nil {
+			logger.Infof("accessing %s failed (re-login might be required): %w", targetInside, ret)
+			settings.V6 = true
+			_ = authUtil(c, false)
+			//break
 		}
-		// Consumes ~5MB per day
-		time.Sleep(3 * time.Second)
+		//_ = authUtil(c, false)
+		time.Sleep(10 * time.Second)
+		//logger.Infof("ok")
+		//target := targetOutside
+		//if campusOnly || settings.V6 {
+		//	target = targetInside
+		//}
+		//if ret = accessTarget(target, settings.V6); ret != nil {
+		//	ret = fmt.Errorf("accessing %s failed (re-login might be required): %w", target, ret)
+		//	break
+		//}
+		//// Consumes ~5MB per day
+		//time.Sleep(5 * time.Second)
 	}
 	return
 }
@@ -375,8 +392,8 @@ func cmdDeauth(c *cli.Context) {
 func cmdLogin(c *cli.Context) error {
 	err := parseSettings(c)
 	if err != nil {
-	    logger.Errorf("Parse setting error: %s\n", err)
-	    os.Exit(1)
+		logger.Errorf("Parse setting error: %s\n", err)
+		os.Exit(1)
 	}
 	err = requestUser()
 	if err != nil {
@@ -427,7 +444,7 @@ func cmdKeepalive(c *cli.Context) {
 	}
 	err = keepAliveLoop(c, c.Bool("auth"))
 	if err != nil {
-	    logger.Errorf("Keepalive error: %s\n", err)
+		logger.Errorf("Keepalive error: %s\n", err)
 		os.Exit(1)
 	}
 }
